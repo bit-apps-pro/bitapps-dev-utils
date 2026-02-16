@@ -8,8 +8,16 @@ import _ from 'lodash'
 const TAB = '    '
 const NEWLINE = '\n'
 
-const fileHeader
-  = ['<?php', '/* THIS IS A GENERATED FILE. DO NOT EDIT DIRECTLY. */', `return [`].join(NEWLINE) + NEWLINE
+const fileHeader = [
+  '<?php',
+  '',
+  "if ( ! defined( 'ABSPATH' ) ) {",
+  `${TAB}exit;`,
+  '}',
+  '',
+  '/* THIS IS A GENERATED FILE. DO NOT EDIT DIRECTLY. */',
+  'return [',
+].join(NEWLINE) + NEWLINE
 
 const fileFooter
   = NEWLINE + ['];', '/* THIS IS THE END OF THE GENERATED FILE */'].join(NEWLINE) + NEWLINE
