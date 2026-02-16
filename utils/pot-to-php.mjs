@@ -11,7 +11,7 @@ const NEWLINE = '\n'
 const fileHeader = [
   '<?php',
   '',
-  "if ( ! defined('ABSPATH')) {",
+  "if ( ! defined( 'ABSPATH' ) ) {",
   `${TAB}exit;`,
   '}',
   '',
