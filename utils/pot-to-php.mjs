@@ -45,14 +45,19 @@ function extractPlaceholders(str) {
 }
 
 /**
- * Converts unnumbered placeholders to numbered ones when a string has multiple placeholders.
+ * Converts unnumbered placeholders to numbered ones.
+ *
+ * By default, only numbers when the string has multiple placeholders.
+ * Pass force=true to number even single placeholders (useful for singular/plural
+ * consistency when the paired string has multiple placeholders).
  *
  * @param {string} str The string to process.
+ * @param {boolean} force Force numbering even for single placeholders.
  * @return {string} The string with numbered placeholders.
  */
-function numberPlaceholders(str) {
+function numberPlaceholders(str, force = false) {
   const placeholders = extractPlaceholders(str)
-  if (placeholders.length < 2) {
+  if (placeholders.length === 0 || (placeholders.length < 2 && !force)) {
     return str
   }
 
@@ -127,10 +132,13 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
       ? ''
       : escapeSingleQuotes(translation.msgid_plural)
 
+    const forceNumbering = extractPlaceholders(original).length > 1
+      || extractPlaceholders(plural).length > 1
+
     const translatorsComment = generateTranslatorsComment(
       translation,
-      numberPlaceholders(original),
-      plural ? numberPlaceholders(plural) : '',
+      numberPlaceholders(original, forceNumbering),
+      numberPlaceholders(plural, forceNumbering),
     )
     if (translatorsComment) {
       php += translatorsComment + NEWLINE
@@ -144,7 +152,7 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
     else {
       php += _.isEmpty(context)
         ? `${TAB}'${original}' => _n_noop('${original}', '${plural}', '${textdomain}')`
-        : `${TAB}'${original}' => _nx_noop('${original}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
+        : `${TAB}'${original}' => _nx_noop('${original}', '${plural}', '${translation.msgctxt}', '${textdomain}')`
     }
   }
 
