@@ -75,19 +75,11 @@ function numberPlaceholders(str) {
  * a comment describing each placeholder.
  *
  * @param {object} translation The translation entry from gettext-parser.
+ * @param {string} numberedMsgid The msgid after placeholder numbering.
+ * @param {string} numberedPlural The msgid_plural after placeholder numbering.
  * @return {string} The translators comment line (with TAB indent), or empty string if no placeholders.
  */
-function generateTranslatorsComment(translation) {
-  const extractedComment = translation.comments?.extracted
-  if (extractedComment) {
-    const comment = extractedComment.startsWith('translators:')
-      ? extractedComment
-      : `translators: ${extractedComment}`
-    return `${TAB}/* ${comment} */`
-  }
-
-  const numberedMsgid = numberPlaceholders(translation.msgid || '')
-  const numberedPlural = numberPlaceholders(translation.msgid_plural || '')
+function generateTranslatorsComment(translation, numberedMsgid, numberedPlural) {
   const msgidPlaceholders = extractPlaceholders(numberedMsgid)
   const pluralPlaceholders = extractPlaceholders(numberedPlural)
   const allPlaceholders = [...new Set([...msgidPlaceholders, ...pluralPlaceholders])]
@@ -96,21 +88,21 @@ function generateTranslatorsComment(translation) {
     return ''
   }
 
-  const hasNumbered = allPlaceholders.some(p => /^%\d+\$/.test(p))
-
-  let descriptions
-  if (hasNumbered) {
-    descriptions = allPlaceholders
-      .map(p => {
-        const num = p.match(/^%(\d+)\$/)?.[1]
-        return num ? `${num}: placeholder value` : `${p}: placeholder value`
-      })
-      .join(', ')
-  } else {
-    descriptions = allPlaceholders
-      .map(p => `${p}: placeholder value`)
-      .join(', ')
+  const extractedComment = translation.comments?.extracted
+  if (extractedComment) {
+    const sanitized = extractedComment.replaceAll('*/', '* /')
+    const comment = sanitized.startsWith('translators:')
+      ? sanitized
+      : `translators: ${sanitized}`
+    return `${TAB}/* ${comment} */`
   }
+
+  const descriptions = allPlaceholders
+    .map((p) => {
+      const num = p.match(/^%(\d+)\$/)?.[1]
+      return num ? `${num}: placeholder value` : `${p}: placeholder value`
+    })
+    .join(', ')
 
   return `${TAB}/* translators: ${descriptions} */`
 }
@@ -131,13 +123,15 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
 
   if (original !== '') {
     original = escapeSingleQuotes(original)
+    const numberedOriginal = numberPlaceholders(original)
+    const numberedPlural = _.isEmpty(translation.msgid_plural)
+      ? ''
+      : numberPlaceholders(escapeSingleQuotes(translation.msgid_plural))
 
-    const translatorsComment = generateTranslatorsComment(translation)
+    const translatorsComment = generateTranslatorsComment(translation, numberedOriginal, numberedPlural)
     if (translatorsComment) {
       php += translatorsComment + NEWLINE
     }
-
-    const numberedOriginal = numberPlaceholders(original)
 
     if (_.isEmpty(translation.msgid_plural)) {
       php += _.isEmpty(context)
@@ -145,11 +139,9 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
         : `${TAB}'${numberedOriginal}' => _x('${numberedOriginal}', '${translation.msgctxt}', '${textdomain}')`
     }
     else {
-      const plural = numberPlaceholders(escapeSingleQuotes(translation.msgid_plural))
-
       php += _.isEmpty(context)
-        ? `${TAB}'${numberedOriginal}' => _n_noop('${numberedOriginal}', '${plural}', '${textdomain}')`
-        : `${TAB}'${numberedOriginal}' => _nx_noop('${numberedOriginal}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
+        ? `${TAB}'${numberedOriginal}' => _n_noop('${numberedOriginal}', '${numberedPlural}', '${textdomain}')`
+        : `${TAB}'${numberedOriginal}' => _nx_noop('${numberedOriginal}',  '${numberedPlural}', '${translation.msgctxt}', '${textdomain}')`
     }
   }
 
