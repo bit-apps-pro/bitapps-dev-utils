@@ -33,6 +33,86 @@ function escapeSingleQuotes(input) {
 }
 
 /**
+ * Extracts printf-style placeholders from a string.
+ *
+ * Matches %s, %d, %f, %1$s, %2$d, etc. but not %% (literal percent).
+ *
+ * @param {string} str The string to extract placeholders from.
+ * @return {string[]} An array of matched placeholders.
+ */
+function extractPlaceholders(str) {
+  return str.match(/%(?:\d+\$)?[sdfeEgGbBoxXcu]/g) || []
+}
+
+/**
+ * Converts unnumbered placeholders to numbered ones.
+ *
+ * By default, only numbers when the string has multiple placeholders.
+ * Pass force=true to number even single placeholders (useful for singular/plural
+ * consistency when the paired string has multiple placeholders).
+ *
+ * @param {string} str The string to process.
+ * @param {boolean} force Force numbering even for single placeholders.
+ * @return {string} The string with numbered placeholders.
+ */
+function numberPlaceholders(str, force = false) {
+  const placeholders = extractPlaceholders(str)
+  if (placeholders.length === 0 || (placeholders.length < 2 && !force)) {
+    return str
+  }
+
+  const hasNumbered = placeholders.some(p => /^%\d+\$/.test(p))
+  if (hasNumbered) {
+    return str
+  }
+
+  let counter = 0
+  return str.replace(/%([sdfeEgGbBoxXcu])/g, (_match, type) => {
+    counter++
+    return `%${counter}$${type}`
+  })
+}
+
+/**
+ * Generates a translators comment for a translation entry containing placeholders.
+ *
+ * Uses extracted comments from the POT file if available, otherwise auto-generates
+ * a comment describing each placeholder.
+ *
+ * @param {object} translation The translation entry from gettext-parser.
+ * @param {string} numberedMsgid The msgid after placeholder numbering.
+ * @param {string} numberedPlural The msgid_plural after placeholder numbering.
+ * @return {string} The translators comment line (with TAB indent), or empty string if no placeholders.
+ */
+function generateTranslatorsComment(translation, numberedMsgid, numberedPlural) {
+  const msgidPlaceholders = extractPlaceholders(numberedMsgid)
+  const pluralPlaceholders = extractPlaceholders(numberedPlural)
+  const allPlaceholders = [...new Set([...msgidPlaceholders, ...pluralPlaceholders])]
+
+  if (allPlaceholders.length === 0) {
+    return ''
+  }
+
+  const extractedComment = translation.comments?.extracted
+  if (extractedComment) {
+    const sanitized = extractedComment.replaceAll('*/', '* /')
+    const comment = sanitized.startsWith('translators:')
+      ? sanitized
+      : `translators: ${sanitized}`
+    return `${TAB}/* ${comment} */`
+  }
+
+  const descriptions = allPlaceholders
+    .map((p) => {
+      const num = p.match(/^%(\d+)\$/)?.[1]
+      return num ? `${num}: placeholder value` : `${p}: placeholder value`
+    })
+    .join(', ')
+
+  return `${TAB}/* translators: ${descriptions} */`
+}
+
+/**
  * Converts a translation parsed from the POT file to lines of WP PHP.
  *
  * @param {object} translation The translation to convert.
@@ -48,6 +128,21 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
 
   if (original !== '') {
     original = escapeSingleQuotes(original)
+    const plural = _.isEmpty(translation.msgid_plural)
+      ? ''
+      : escapeSingleQuotes(translation.msgid_plural)
+
+    const forceNumbering = extractPlaceholders(original).length > 1
+      || extractPlaceholders(plural).length > 1
+
+    const translatorsComment = generateTranslatorsComment(
+      translation,
+      numberPlaceholders(original, forceNumbering),
+      numberPlaceholders(plural, forceNumbering),
+    )
+    if (translatorsComment) {
+      php += translatorsComment + NEWLINE
+    }
 
     if (_.isEmpty(translation.msgid_plural)) {
       php += _.isEmpty(context)
@@ -55,11 +150,9 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
         : `${TAB}'${original}' => _x('${original}', '${translation.msgctxt}', '${textdomain}')`
     }
     else {
-      const plural = escapeSingleQuotes(translation.msgid_plural)
-
       php += _.isEmpty(context)
         ? `${TAB}'${original}' => _n_noop('${original}', '${plural}', '${textdomain}')`
-        : `${TAB}'${original}' => _nx_noop('${original}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
+        : `${TAB}'${original}' => _nx_noop('${original}', '${plural}', '${translation.msgctxt}', '${textdomain}')`
     }
   }
 
