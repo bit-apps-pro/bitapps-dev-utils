@@ -33,6 +33,63 @@ function escapeSingleQuotes(input) {
 }
 
 /**
+ * Extracts printf-style placeholders from a string.
+ *
+ * Matches %s, %d, %f, %1$s, %2$d, etc. but not %% (literal percent).
+ *
+ * @param {string} str The string to extract placeholders from.
+ * @return {string[]} An array of matched placeholders.
+ */
+function extractPlaceholders(str) {
+  return str.match(/%(?:\d+\$)?[sdfeEgGbBoxXcu]/g) || []
+}
+
+/**
+ * Generates a translators comment for a translation entry containing placeholders.
+ *
+ * Uses extracted comments from the POT file if available, otherwise auto-generates
+ * a comment describing each placeholder.
+ *
+ * @param {object} translation The translation entry from gettext-parser.
+ * @return {string} The translators comment line (with TAB indent), or empty string if no placeholders.
+ */
+function generateTranslatorsComment(translation) {
+  const extractedComment = translation.comments?.extracted
+  if (extractedComment) {
+    const comment = extractedComment.startsWith('translators:')
+      ? extractedComment
+      : `translators: ${extractedComment}`
+    return `${TAB}/* ${comment} */`
+  }
+
+  const msgidPlaceholders = extractPlaceholders(translation.msgid || '')
+  const pluralPlaceholders = extractPlaceholders(translation.msgid_plural || '')
+  const allPlaceholders = [...new Set([...msgidPlaceholders, ...pluralPlaceholders])]
+
+  if (allPlaceholders.length === 0) {
+    return ''
+  }
+
+  const hasNumbered = allPlaceholders.some(p => /^%\d+\$/.test(p))
+
+  let descriptions
+  if (hasNumbered) {
+    descriptions = allPlaceholders
+      .map(p => {
+        const num = p.match(/^%(\d+)\$/)?.[1]
+        return num ? `${num}: placeholder value` : `${p}: placeholder value`
+      })
+      .join(', ')
+  } else {
+    descriptions = allPlaceholders
+      .map(p => `${p}: placeholder value`)
+      .join(', ')
+  }
+
+  return `${TAB}/* translators: ${descriptions} */`
+}
+
+/**
  * Converts a translation parsed from the POT file to lines of WP PHP.
  *
  * @param {object} translation The translation to convert.
@@ -48,6 +105,11 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
 
   if (original !== '') {
     original = escapeSingleQuotes(original)
+
+    const translatorsComment = generateTranslatorsComment(translation)
+    if (translatorsComment) {
+      php += translatorsComment + NEWLINE
+    }
 
     if (_.isEmpty(translation.msgid_plural)) {
       php += _.isEmpty(context)
