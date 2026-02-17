@@ -45,6 +45,30 @@ function extractPlaceholders(str) {
 }
 
 /**
+ * Converts unnumbered placeholders to numbered ones when a string has multiple placeholders.
+ *
+ * @param {string} str The string to process.
+ * @return {string} The string with numbered placeholders.
+ */
+function numberPlaceholders(str) {
+  const placeholders = extractPlaceholders(str)
+  if (placeholders.length < 2) {
+    return str
+  }
+
+  const hasNumbered = placeholders.some(p => /^%\d+\$/.test(p))
+  if (hasNumbered) {
+    return str
+  }
+
+  let counter = 0
+  return str.replace(/%([sdfeEgGbBoxXcu])/g, (_match, type) => {
+    counter++
+    return `%${counter}$${type}`
+  })
+}
+
+/**
  * Generates a translators comment for a translation entry containing placeholders.
  *
  * Uses extracted comments from the POT file if available, otherwise auto-generates
@@ -62,8 +86,10 @@ function generateTranslatorsComment(translation) {
     return `${TAB}/* ${comment} */`
   }
 
-  const msgidPlaceholders = extractPlaceholders(translation.msgid || '')
-  const pluralPlaceholders = extractPlaceholders(translation.msgid_plural || '')
+  const numberedMsgid = numberPlaceholders(translation.msgid || '')
+  const numberedPlural = numberPlaceholders(translation.msgid_plural || '')
+  const msgidPlaceholders = extractPlaceholders(numberedMsgid)
+  const pluralPlaceholders = extractPlaceholders(numberedPlural)
   const allPlaceholders = [...new Set([...msgidPlaceholders, ...pluralPlaceholders])]
 
   if (allPlaceholders.length === 0) {
@@ -111,17 +137,19 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
       php += translatorsComment + NEWLINE
     }
 
+    const numberedOriginal = numberPlaceholders(original)
+
     if (_.isEmpty(translation.msgid_plural)) {
       php += _.isEmpty(context)
-        ? `${TAB}'${original}' => __('${original}', '${textdomain}')`
-        : `${TAB}'${original}' => _x('${original}', '${translation.msgctxt}', '${textdomain}')`
+        ? `${TAB}'${numberedOriginal}' => __('${numberedOriginal}', '${textdomain}')`
+        : `${TAB}'${numberedOriginal}' => _x('${numberedOriginal}', '${translation.msgctxt}', '${textdomain}')`
     }
     else {
-      const plural = escapeSingleQuotes(translation.msgid_plural)
+      const plural = numberPlaceholders(escapeSingleQuotes(translation.msgid_plural))
 
       php += _.isEmpty(context)
-        ? `${TAB}'${original}' => _n_noop('${original}', '${plural}', '${textdomain}')`
-        : `${TAB}'${original}' => _nx_noop('${original}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
+        ? `${TAB}'${numberedOriginal}' => _n_noop('${numberedOriginal}', '${plural}', '${textdomain}')`
+        : `${TAB}'${numberedOriginal}' => _nx_noop('${numberedOriginal}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
     }
   }
 
