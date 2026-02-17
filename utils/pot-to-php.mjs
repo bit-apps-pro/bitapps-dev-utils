@@ -123,25 +123,28 @@ function convertTranslationToPHP(translation, textdomain, context = '') {
 
   if (original !== '') {
     original = escapeSingleQuotes(original)
-    const numberedOriginal = numberPlaceholders(original)
-    const numberedPlural = _.isEmpty(translation.msgid_plural)
+    const plural = _.isEmpty(translation.msgid_plural)
       ? ''
-      : numberPlaceholders(escapeSingleQuotes(translation.msgid_plural))
+      : escapeSingleQuotes(translation.msgid_plural)
 
-    const translatorsComment = generateTranslatorsComment(translation, numberedOriginal, numberedPlural)
+    const translatorsComment = generateTranslatorsComment(
+      translation,
+      numberPlaceholders(original),
+      plural ? numberPlaceholders(plural) : '',
+    )
     if (translatorsComment) {
       php += translatorsComment + NEWLINE
     }
 
     if (_.isEmpty(translation.msgid_plural)) {
       php += _.isEmpty(context)
-        ? `${TAB}'${numberedOriginal}' => __('${numberedOriginal}', '${textdomain}')`
-        : `${TAB}'${numberedOriginal}' => _x('${numberedOriginal}', '${translation.msgctxt}', '${textdomain}')`
+        ? `${TAB}'${original}' => __('${original}', '${textdomain}')`
+        : `${TAB}'${original}' => _x('${original}', '${translation.msgctxt}', '${textdomain}')`
     }
     else {
       php += _.isEmpty(context)
-        ? `${TAB}'${numberedOriginal}' => _n_noop('${numberedOriginal}', '${numberedPlural}', '${textdomain}')`
-        : `${TAB}'${numberedOriginal}' => _nx_noop('${numberedOriginal}',  '${numberedPlural}', '${translation.msgctxt}', '${textdomain}')`
+        ? `${TAB}'${original}' => _n_noop('${original}', '${plural}', '${textdomain}')`
+        : `${TAB}'${original}' => _nx_noop('${original}',  '${plural}', '${translation.msgctxt}', '${textdomain}')`
     }
   }
 
