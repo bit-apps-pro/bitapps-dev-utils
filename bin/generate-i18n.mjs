@@ -2,6 +2,7 @@
 
 import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { exitIfNotLinux, exitIfWpCliNotInstalled } from '../utils/build-helpers.mjs'
 
 import { convertPOTToPHP } from '../utils/pot-to-php.mjs'
@@ -35,16 +36,20 @@ const POT_FILE_HEADER = JSON.stringify({
 exitIfNotLinux()
 exitIfWpCliNotInstalled()
 
-if (!existsSync('languages')) mkdirSync('languages')
+const languagesDir = resolve(process.cwd(), 'languages')
+if (!existsSync(languagesDir)) mkdirSync(languagesDir)
 
+const freePotPath = resolve(languagesDir, `${PLUGIN_SLUG}-free.pot`)
+const finalPotPath = resolve(languagesDir, `${PLUGIN_SLUG}.pot`)
+
+// Step 1: Generate POT for free (backend, assets)
 execSync(
-  `pnpm react-gettext-parser --output ${FRONTEND_POT_FILE} --config ${GETTEXT_PARSER_CONFIG}  ${GETTEXT_PARSER_FILES_GLOB}`,
+  `wp i18n make-pot  .  ${freePotPath}  --slug='${PLUGIN_SLUG}'  --ignore-domain  --include='backend,assets'  --exclude='build,dist,pro'  --headers='${POT_FILE_HEADER}'`,
   execOptions,
 )
 
-convertPOTToPHP(FRONTEND_POT_FILE, FRONTEND_EXTRACTED_STRINGS_PHP_FILE, PLUGIN_SLUG)
-
+// Step 2: Generate POT for pro (source=pro so paths are backend/..., assets/... without pro/ prefix) and merge with free
 execSync(
-  `wp i18n make-pot  .  languages/${PLUGIN_SLUG}.pot  --slug='${PLUGIN_SLUG}'  --ignore-domain  --skip-js  --include='backend,pro/backend/,languages'  --headers='${POT_FILE_HEADER}'`,
+  `wp i18n make-pot  pro  ${finalPotPath}  --slug='${PLUGIN_SLUG}'  --ignore-domain  --include='backend,assets'  --exclude='build,dist'  --merge='${freePotPath}'  --headers='${POT_FILE_HEADER}'`,
   execOptions,
 )
