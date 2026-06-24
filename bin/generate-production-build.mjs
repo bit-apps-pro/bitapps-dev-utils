@@ -22,11 +22,12 @@ program
   )
   .option('-ni --noi18n', 'specify if you do not want to generate i18n files', false)
   .option('-nb --nobuild', 'specify if you do not want to build frontend', false)
+  .option('-d, --delete <path>', 'remove from build output before zip', (v, a) => a.concat(v), [])
   .requiredOption('-s --slug <char>', 'specify the plugin slug')
   .requiredOption('-pr --pro', 'specify if you want to generate pro build', false)
   .parse()
 
-const { outdir, slug: pluginSlug, zip, cleanbuild, pro, noi18n, nobuild } = program.opts()
+const { outdir, slug: pluginSlug, zip, cleanbuild, pro, noi18n, nobuild, delete: deletePaths } = program.opts()
 
 if (!noi18n || zip) {
   exitIfNotLinux()
@@ -43,6 +44,7 @@ console.log('options passed :', {
   pro,
   nobuild,
   noi18n,
+  deletePaths,
 })
 
 if (nobuild || noi18n) {
@@ -109,6 +111,9 @@ execSync('composer dump-autoload -o', { cwd: outputDirectory, stdio: 'inherit' }
 
 // remove composer.lock
 fse.remove(`${outputDirectory}/composer.lock`)
+
+for (const p of deletePaths)
+  await fse.remove(path.join(outputDirectory, p))
 
 // create zip file
 if (zip)
