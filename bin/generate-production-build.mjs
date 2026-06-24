@@ -116,7 +116,7 @@ const resolvedOutputDirectory = path.resolve(outputDirectory)
 await Promise.all(
   deletePaths.map(async (p) => {
     const resolvedPath = path.resolve(resolvedOutputDirectory, p)
-    if (resolvedPath !== resolvedOutputDirectory && !resolvedPath.startsWith(`${resolvedOutputDirectory}${path.sep}`)) {
+    if (!resolvedPath.startsWith(`${resolvedOutputDirectory}${path.sep}`)) {
       throw new Error(`Safety check failed: Attempted to delete path outside of output directory: ${p}`)
     }
     await fse.remove(resolvedPath)
