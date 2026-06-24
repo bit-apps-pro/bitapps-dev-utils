@@ -112,8 +112,16 @@ execSync('composer dump-autoload -o', { cwd: outputDirectory, stdio: 'inherit' }
 // remove composer.lock
 fse.remove(`${outputDirectory}/composer.lock`)
 
-for (const p of deletePaths)
-  await fse.remove(path.join(outputDirectory, p))
+const resolvedOutputDirectory = path.resolve(outputDirectory)
+await Promise.all(
+  deletePaths.map(async (p) => {
+    const resolvedPath = path.resolve(resolvedOutputDirectory, p)
+    if (resolvedPath !== resolvedOutputDirectory && !resolvedPath.startsWith(`${resolvedOutputDirectory}${path.sep}`)) {
+      throw new Error(`Safety check failed: Attempted to delete path outside of output directory: ${p}`)
+    }
+    await fse.remove(resolvedPath)
+  }),
+)
 
 // create zip file
 if (zip)
