@@ -22,7 +22,12 @@ program
   )
   .option('-ni --noi18n', 'specify if you do not want to generate i18n files', false)
   .option('-nb --nobuild', 'specify if you do not want to build frontend', false)
-  .option('-d, --delete <path>', 'remove from build output before zip', (v, a) => a.concat(v), [])
+    .option(
+    '-d, --delete <pattern>',
+    'remove from build output before zip (repeatable): a path, a glob or a /regex/flags, relative to the build output',
+    (v, a) => a.concat(v),
+    [],
+  )
   .requiredOption('-s --slug <char>', 'specify the plugin slug')
   .requiredOption('-pr --pro', 'specify if you want to generate pro build', false)
   .parse()
