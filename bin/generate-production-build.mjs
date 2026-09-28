@@ -22,7 +22,7 @@ program
   )
   .option('-ni --noi18n', 'specify if you do not want to generate i18n files', false)
   .option('-nb --nobuild', 'specify if you do not want to build frontend', false)
-    .option(
+  .option(
     '-d, --delete <pattern>',
     'remove from build output before zip (repeatable): a path, a glob or a /regex/flags, relative to the build output',
     (v, a) => a.concat(v),
