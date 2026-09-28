@@ -118,8 +118,34 @@ execSync('composer dump-autoload -o', { cwd: outputDirectory, stdio: 'inherit' }
 fse.remove(`${outputDirectory}/composer.lock`)
 
 const resolvedOutputDirectory = path.resolve(outputDirectory)
+
+// `*` and `?` match within one path segment, `**` across segments; everything else is literal
+function globToRegExp(glob) {
+  const source = glob
+    .replace(/^\.\//, '')
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*\/|\*\*|\*|\?/g, token => ({ '**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]' })[token])
+  return new RegExp(`^${source}$`)
+}
+
+// an existing path is used as-is; otherwise `/regex/flags` or a glob is tested
+// against every path in the build output (posix separators)
+function matchDeletePattern(pattern) {
+  if (fs.existsSync(path.resolve(resolvedOutputDirectory, pattern)))
+    return [pattern]
+  const regex = pattern.match(/^\/(.+)\/([dgimsuvy]*)$/)
+  const re = regex ? new RegExp(regex[1], regex[2].replace('g', '')) : globToRegExp(pattern)
+  return fs.readdirSync(resolvedOutputDirectory, { recursive: true })
+    .map(p => p.split(path.sep).join('/'))
+    .filter(p => re.test(p))
+}
+
+const matchedDeletePaths = [...new Set(deletePaths.flatMap(matchDeletePattern))]
+if (matchedDeletePaths.length)
+  console.log('🗑️  Removing from build:', matchedDeletePaths)
+
 await Promise.all(
-  deletePaths.map(async (p) => {
+  matchedDeletePaths.map(async (p) => {
     const resolvedPath = path.resolve(resolvedOutputDirectory, p)
     if (!resolvedPath.startsWith(`${resolvedOutputDirectory}${path.sep}`)) {
       throw new Error(`Safety check failed: Attempted to delete path outside of output directory: ${p}`)
