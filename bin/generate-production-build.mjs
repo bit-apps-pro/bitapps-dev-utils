@@ -8,6 +8,7 @@ import { exit } from 'node:process'
 import { program } from 'commander'
 
 import fse from 'fs-extra'
+import { globSync, hasMagic } from 'glob'
 import { commandExistsSync, copyFilesAndFolders, exitIfNotLinux } from '../utils/build-helpers.mjs'
 
 program
@@ -24,7 +25,7 @@ program
   .option('-nb --nobuild', 'specify if you do not want to build frontend', false)
   .option(
     '-d, --delete <pattern>',
-    'remove from build output before zip (repeatable): a path, a glob or a /regex/flags, relative to the build output',
+    'remove from build output before zip (repeatable): a path, a glob (without a "/" it matches at any depth, e.g. *.map) or a /regex/flags tested against the whole relative path',
     (v, a) => a.concat(v),
     [],
   )
@@ -50,6 +51,25 @@ console.log('options passed :', {
   nobuild,
   noi18n,
   deletePaths,
+})
+
+// validate --delete patterns up front so a typo fails before the slow build, not after it
+const deleteRules = deletePaths.map((pattern) => {
+  const regex = pattern.match(/^\/(.+)\/([dgimsuvy]*)$/)
+  if (regex) {
+    try {
+      return { pattern, regex: new RegExp(regex[1], regex[2].replace('g', '')) }
+    }
+    catch (error) {
+      console.error(`❌ Invalid --delete regex "${pattern}": ${error.message}`)
+      exit(1)
+    }
+  }
+  if (path.isAbsolute(pattern) || pattern.split(/[\\/]/).includes('..')) {
+    console.error(`❌ Invalid --delete pattern "${pattern}": must be relative to the build output and not contain ".."`)
+    exit(1)
+  }
+  return { pattern }
 })
 
 if (nobuild || noi18n) {
@@ -117,42 +137,41 @@ execSync('composer dump-autoload -o', { cwd: outputDirectory, stdio: 'inherit' }
 // remove composer.lock
 fse.remove(`${outputDirectory}/composer.lock`)
 
-const resolvedOutputDirectory = path.resolve(outputDirectory)
+const realOutputDirectory = fs.realpathSync(outputDirectory)
 
-// `*` and `?` match within one path segment, `**` across segments; everything else is literal
-function globToRegExp(glob) {
-  const source = glob
-    .replace(/^\.\//, '')
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\/|\*\*|\*|\?/g, token => ({ '**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]' })[token])
-  return new RegExp(`^${source}$`)
+// `**` alone does not descend into symlinked folders, but `a/**/b` follows one level,
+// so every match is checked against the real (symlink-resolved) location of its parent
+function isInsideOutputDirectory(p) {
+  const realParent = fs.realpathSync(path.dirname(path.resolve(realOutputDirectory, p)))
+  return realParent === realOutputDirectory || realParent.startsWith(`${realOutputDirectory}${path.sep}`)
 }
 
-// an existing path is used as-is; otherwise `/regex/flags` or a glob is tested
-// against every path in the build output (posix separators)
-function matchDeletePattern(pattern) {
-  if (fs.existsSync(path.resolve(resolvedOutputDirectory, pattern)))
-    return [pattern]
-  const regex = pattern.match(/^\/(.+)\/([dgimsuvy]*)$/)
-  const re = regex ? new RegExp(regex[1], regex[2].replace('g', '')) : globToRegExp(pattern)
-  return fs.readdirSync(resolvedOutputDirectory, { recursive: true })
-    .map(p => p.split(path.sep).join('/'))
-    .filter(p => re.test(p))
+function findDeleteMatches({ pattern, regex }) {
+  const options = { cwd: realOutputDirectory, dot: true, posix: true }
+  const matches = regex
+    ? globSync('**', options).filter(p => regex.test(p))
+    : globSync(pattern, { ...options, matchBase: !pattern.includes('/') && hasMagic(pattern) })
+  return matches.filter(p => p !== '.')
 }
 
-const matchedDeletePaths = [...new Set(deletePaths.flatMap(matchDeletePattern))]
-if (matchedDeletePaths.length)
-  console.log('🗑️  Removing from build:', matchedDeletePaths)
+// match and check everything before deleting anything, so a bad match never leaves a half-cleaned build
+const pathsToDelete = new Set()
+for (const rule of deleteRules) {
+  const matches = findDeleteMatches(rule)
+  if (!matches.length)
+    console.warn(`⚠️  --delete "${rule.pattern}" matched nothing, it will stay in the build`)
+  for (const p of matches) {
+    if (isInsideOutputDirectory(p))
+      pathsToDelete.add(p)
+    else
+      console.warn(`⚠️  --delete "${rule.pattern}": skipping ${p}, it is a symlink target outside the build`)
+  }
+}
 
-await Promise.all(
-  matchedDeletePaths.map(async (p) => {
-    const resolvedPath = path.resolve(resolvedOutputDirectory, p)
-    if (!resolvedPath.startsWith(`${resolvedOutputDirectory}${path.sep}`)) {
-      throw new Error(`Safety check failed: Attempted to delete path outside of output directory: ${p}`)
-    }
-    await fse.remove(resolvedPath)
-  }),
-)
+if (pathsToDelete.size)
+  console.log('🗑️  Removing from build:', [...pathsToDelete])
+
+await Promise.all([...pathsToDelete].map(p => fse.remove(path.resolve(realOutputDirectory, p))))
 
 // create zip file
 if (zip)
