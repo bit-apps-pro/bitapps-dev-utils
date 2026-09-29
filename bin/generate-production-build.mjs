@@ -58,7 +58,8 @@ const deleteRules = deletePaths.map((pattern) => {
   const regex = pattern.match(/^\/(.+)\/([dgimsuvy]*)$/)
   if (regex) {
     try {
-      return { pattern, regex: new RegExp(regex[1], regex[2].replace('g', '')) }
+      // drop g and y: both make test() stateful via lastIndex, so matches would depend on the previous path
+      return { pattern, regex: new RegExp(regex[1], regex[2].replace(/[gy]/g, '')) }
     }
     catch (error) {
       console.error(`❌ Invalid --delete regex "${pattern}": ${error.message}`)
@@ -168,10 +169,16 @@ for (const rule of deleteRules) {
   }
 }
 
-if (pathsToDelete.size)
-  console.log('🗑️  Removing from build:', [...pathsToDelete])
+// drop paths inside a folder that is already being removed, so parallel removes never race on the same tree
+const topLevelPathsToDelete = [...pathsToDelete].filter((p) => {
+  const segments = p.split('/')
+  return !segments.slice(1).some((_, i) => pathsToDelete.has(segments.slice(0, i + 1).join('/')))
+})
 
-await Promise.all([...pathsToDelete].map(p => fse.remove(path.resolve(realOutputDirectory, p))))
+if (topLevelPathsToDelete.length)
+  console.log('🗑️  Removing from build:', topLevelPathsToDelete)
+
+await Promise.all(topLevelPathsToDelete.map(p => fse.remove(path.resolve(realOutputDirectory, p))))
 
 // create zip file
 if (zip)
